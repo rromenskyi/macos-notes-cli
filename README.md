@@ -26,8 +26,8 @@ It is built for a simple workflow: add a note from the terminal, have it appear 
 ## Installation
 
 ```bash
-git clone https://github.com/rromenskyi/notecli.git
-cd notecli
+git clone https://github.com/rromenskyi/macos-notes-cli.git
+cd macos-notes-cli
 python3 -m pip install -r requirements.txt
 chmod +x notecli.py
 ```
