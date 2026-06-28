@@ -7,7 +7,8 @@ def beautify_note_content(
     original_title: str,
     original_body: str,
     api_url: str,
-    model_name: str
+    model_name: str,
+    timeout: int
 ) -> Optional[str]:
     """
     Uses a local LLM to improve the note's content.
@@ -34,11 +35,15 @@ Body: {original_body}
     }
 
     try:
-        response = requests.post(api_url, json=payload, timeout=120)
+        response = requests.post(api_url, json=payload, timeout=timeout)
         response.raise_for_status()
         result = response.json()
     except requests.exceptions.Timeout:
-        print("[ERROR] LLM request timed out", file=sys.stderr)
+        print(
+            f"[ERROR] LLM request timed out after {timeout}s. "
+            "Increase llm_timeout in ~/.notecli_config.json if your model needs more time.",
+            file=sys.stderr,
+        )
         return None
     except requests.exceptions.ConnectionError:
         print("[ERROR] Cannot connect to LLM API. Is the server running?", file=sys.stderr)

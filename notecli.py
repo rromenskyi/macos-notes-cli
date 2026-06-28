@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 
 import argparse
+import os
+import subprocess
 import sys
+import tempfile
 import uuid
 from pathlib import Path
+from typing import Optional
 
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -27,6 +31,60 @@ def load_config() -> dict:
         except Exception:
             pass
     return {}
+
+def print_llm_config_help() -> None:
+    print(
+        "LLM is not configured. Create ~/.notecli_config.json, for example:\n"
+        '{\n'
+        '  "llm_api_url": "http://localhost:1234/v1/chat/completions",\n'
+        '  "llm_model": "google/gemma-4-26b-a4b-qat",\n'
+        '  "llm_timeout": 120\n'
+        '}\n',
+        file=sys.stderr,
+    )
+
+def load_llm_config() -> Optional[dict]:
+    config = load_config()
+    api_url = config.get("llm_api_url")
+    model_name = config.get("llm_model")
+    if not api_url or not model_name:
+        print_llm_config_help()
+        return None
+    return {
+        "api_url": api_url,
+        "model_name": model_name,
+        "timeout": int(config.get("llm_timeout", 120)),
+    }
+
+def collect_note_input(title: str, body: str, edit: bool) -> tuple[str, str]:
+    if edit:
+        return collect_note_input_from_editor(title, body)
+
+    if not title and not body and sys.stdin.isatty():
+        title = input("Title: ").strip()
+        print("Body. Finish with Ctrl-D:")
+        body = sys.stdin.read().strip()
+
+    return title, body
+
+def collect_note_input_from_editor(title: str, body: str) -> tuple[str, str]:
+    editor = os.environ.get("EDITOR", "nano")
+    initial_content = f"{title}\n\n{body}".rstrip() + "\n"
+
+    with tempfile.NamedTemporaryFile("w+", suffix=".md") as f:
+        f.write(initial_content)
+        f.flush()
+        subprocess.run([editor, f.name], check=True)
+        f.seek(0)
+        content = f.read().strip("\n")
+
+    if not content:
+        return "", ""
+
+    lines = content.splitlines()
+    edited_title = lines[0].strip()
+    edited_body = "\n".join(lines[1:]).strip()
+    return edited_title, edited_body
 
 def add_note(title: str, body: str, sync_to_notes: bool) -> tuple[str, bool]:
     note_id = str(uuid.uuid4())
@@ -63,6 +121,19 @@ def list_notes(system: bool = False) -> None:
         return
     for n in notes:
         print(f"[{n.id[:8]}] {n.title or '(no title)'}")
+
+def show_note(note_id_prefix: str) -> bool:
+    note = find_note_by_id_prefix_or_exact(note_id_prefix)
+    if not note:
+        return False
+
+    print(f"ID: {note.id}")
+    if note.metadata.get("macos_note_id"):
+        print(f"macOS Notes ID: {note.metadata['macos_note_id']}")
+    print(f"Title: {note.title or '(no title)'}")
+    print()
+    print(note.body)
+    return True
 
 def sync_macos_notes() -> int:
     system_notes = list_macos_notes()
@@ -113,17 +184,23 @@ def remove_note(note_id_prefix: str) -> bool:
     return True
 
 def beautify_note(note_id_prefix: str) -> bool:
-    from notecli.core.llm import beautify_note_content
-
-    config = load_config()
-    api_url = config.get("llm_api_url", "http://localhost:1234/v1/chat/completions")
-    model_name = config.get("llm_model", "local-model")
-
     note = find_note_by_id_prefix_or_exact(note_id_prefix)
     if not note:
         return False
+
+    llm_config = load_llm_config()
+    if not llm_config:
+        return False
+
+    from notecli.core.llm import beautify_note_content
     
-    new_body = beautify_note_content(note.title, note.body, api_url, model_name)
+    new_body = beautify_note_content(
+        note.title,
+        note.body,
+        llm_config["api_url"],
+        llm_config["model_name"],
+        llm_config["timeout"],
+    )
     
     if new_body:
         macos_note_id = note.metadata.get("macos_note_id")
@@ -148,13 +225,23 @@ def build_parser() -> argparse.ArgumentParser:
     add_p = sub.add_parser("add", help="Add a new note")
     add_p.add_argument("-t", "--title", default="", help="Note title")
     add_p.add_argument("-b", "--body", default="", help="Note body")
+    add_p.add_argument("-e", "--edit", action="store_true", help="Open an editor to write the note")
     add_p.add_argument("--local-only", action="store_true", help="Do not sync to macOS Notes")
     add_p.add_argument("--to-notes", action="store_true", help=argparse.SUPPRESS)
+
+    addb_p = sub.add_parser("addb", help="Add a new note and beautify it")
+    addb_p.add_argument("-t", "--title", default="", help="Note title")
+    addb_p.add_argument("-b", "--body", default="", help="Note body")
+    addb_p.add_argument("-e", "--edit", action="store_true", help="Open an editor to write the note")
+    addb_p.add_argument("--local-only", action="store_true", help="Do not sync to macOS Notes")
 
     list_p = sub.add_parser("list", help="List notes")
     list_p.add_argument("--system", action="store_true", help="List notes directly from macOS Notes")
 
     sub.add_parser("sync", help="Import macOS Notes into the local notecli index")
+
+    show_p = sub.add_parser("show", help="Show a full note by ID prefix")
+    show_p.add_argument("id", help="Note ID prefix")
 
     rm_p = sub.add_parser("rm", help="Remove note by ID prefix")
     rm_p.add_argument("id", help="Note ID prefix")
@@ -169,8 +256,21 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.cmd == "add":
-        note_id, synced_to_notes = add_note(args.title, args.body, not args.local_only)
+        title, body = collect_note_input(args.title, args.body, args.edit)
+        note_id, synced_to_notes = add_note(title, body, not args.local_only)
         print(f"Note added (id={note_id[:8]})")
+        if synced_to_notes:
+            print("Also created in Notes app")
+    elif args.cmd == "addb":
+        if not load_llm_config():
+            sys.exit(1)
+        title, body = collect_note_input(args.title, args.body, args.edit)
+        note_id, synced_to_notes = add_note(title, body, not args.local_only)
+        if beautify_note(note_id):
+            print(f"Note added and beautified (id={note_id[:8]})")
+        else:
+            print(f"Note added but beautify failed (id={note_id[:8]})", file=sys.stderr)
+            sys.exit(1)
         if synced_to_notes:
             print("Also created in Notes app")
     elif args.cmd == "list":
@@ -178,6 +278,10 @@ def main() -> None:
     elif args.cmd == "sync":
         imported_count = sync_macos_notes()
         print(f"Imported {imported_count} notes from Notes app")
+    elif args.cmd == "show":
+        if not show_note(args.id):
+            print(f"Note with id={args.id} not found", file=sys.stderr)
+            sys.exit(1)
     elif args.cmd == "rm":
         if remove_note(args.id):
             print(f"Note {args.id} removed")

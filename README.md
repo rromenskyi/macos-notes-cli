@@ -7,10 +7,12 @@ It is built for a simple workflow: add a note from the terminal, have it appear 
 ## Features
 
 - Add notes with a title and body from the terminal.
+- Add and immediately beautify a note with `addb`.
 - Create new notes in macOS Notes by default.
 - Keep a local index in `~/.notecli_data.json`.
 - Store the linked macOS Notes ID for synced notes.
 - List local notes or read directly from Notes.app.
+- Show a full local note by ID prefix.
 - Import existing Notes.app notes into the local index.
 - Delete linked system notes with `rm`.
 - Beautify note bodies through a local OpenAI-compatible chat endpoint such as LM Studio.
@@ -61,10 +63,28 @@ Add a local-only note:
 notecli add -t "Draft" -b "Temporary note" --local-only
 ```
 
+Open your editor instead of passing the note text as command arguments:
+
+```bash
+notecli add --edit
+```
+
+Add a note and immediately beautify it with the configured LLM:
+
+```bash
+notecli addb -t "Raw idea" -b "need clean this up later"
+```
+
 List local notes:
 
 ```bash
 notecli list
+```
+
+Show a full local note:
+
+```bash
+notecli show <ID>
 ```
 
 List notes directly from macOS Notes without importing them:
@@ -110,11 +130,14 @@ Example:
 ```json
 {
   "llm_api_url": "http://localhost:1234/v1/chat/completions",
-  "llm_model": "google/gemma-4-26b-a4b-qat"
+  "llm_model": "google/gemma-4-26b-a4b-qat",
+  "llm_timeout": 120
 }
 ```
 
 The endpoint should behave like OpenAI's chat completions API.
+
+If this file is missing, `bfy` and `addb` do not try to guess defaults. They print the required config shape and exit without waiting on a network timeout. Increase `llm_timeout` if your local model needs more time to load on the first request.
 
 ## Data Model
 
@@ -146,7 +169,9 @@ Notes imported with `sync` get a local UUID and keep their system note ID, so la
 `notecli` is not a background sync daemon. It performs explicit operations:
 
 - `add` creates a local record and a system note.
+- `addb` creates a note, beautifies it, and updates the linked system note.
 - `list` reads the local index.
+- `show` prints the full local note body and metadata.
 - `list --system` reads Notes.app directly.
 - `sync` imports Notes.app notes that are not already in the local index.
 - `rm` removes the local record and, when linked, deletes the system note.
