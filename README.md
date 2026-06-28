@@ -1,75 +1,144 @@
 # notecli
 
-A simple CLI for quick notes with the ability to duplicate entries into the macOS Notes app.
+`notecli` is a small macOS-first command line tool for capturing notes quickly, keeping a local JSON index, and linking those notes to Apple Notes.
+
+It is built for a simple workflow: add a note from the terminal, have it appear in Notes.app, then use the CLI to list, import, delete, or clean it up with a local OpenAI-compatible LLM.
 
 ## Features
 
-- Add text notes with an optional title and body.
-- List local notecli notes or read directly from macOS Notes.
-- Import existing macOS Notes into the local notecli index.
-- Remove a note by ID.
-- Beautify a note through a local OpenAI-compatible LLM endpoint.
-- New notes are also created in the macOS Notes app by default.
-- Notes created by `notecli` store their macOS Notes ID, so `rm` deletes the linked system note and `bfy` updates it.
+- Add notes with a title and body from the terminal.
+- Create new notes in macOS Notes by default.
+- Keep a local index in `~/.notecli_data.json`.
+- Store the linked macOS Notes ID for synced notes.
+- List local notes or read directly from Notes.app.
+- Import existing Notes.app notes into the local index.
+- Delete linked system notes with `rm`.
+- Beautify note bodies through a local OpenAI-compatible chat endpoint such as LM Studio.
+- Use `--local-only` when you do not want to create a system note.
+
+## Requirements
+
+- macOS with the Notes app.
+- Python 3.9 or newer.
+- Apple automation permission for your terminal.
+- Optional: a local OpenAI-compatible LLM server for `bfy`.
 
 ## Installation
 
-1. Clone the repository (or just copy the `notecli.py` file):
-   ```bash
-   git clone <repo-url> notecli
-   cd notecli
-   ```
-2. Install dependencies:
-   ```bash
-   python3 -m pip install -r requirements.txt
-   ```
-3. Make the script executable:
-   ```bash
-   chmod +x notecli.py
-   ```
-4. (For macOS) Grant automation permission to the Notes app:
-   - Open **System Settings → Privacy & Security → Automation**.
-   - Find your terminal (e.g., Terminal or iTerm2) and enable access to **Notes**.
+```bash
+git clone https://github.com/rromenskyi/notecli.git
+cd notecli
+python3 -m pip install -r requirements.txt
+chmod +x notecli.py
+```
+
+Grant Notes automation permission when macOS asks for it. You can also check it manually in:
+
+```text
+System Settings -> Privacy & Security -> Automation
+```
+
+Enable access from your terminal app to Notes.
 
 ## Usage
 
+Add a note. By default this writes to the local index and creates a linked note in macOS Notes:
+
 ```bash
-# Add a note locally and in the macOS Notes app
-./notecli.py add -t "Title" -b "Note text"
+./notecli.py add -t "Incident follow-up" -b "Check Grafana alerts after deploy"
+```
 
-# Add a note locally only
-./notecli.py add -t "Title" -b "Note text" --local-only
+Add a local-only note:
 
-# List all notes
+```bash
+./notecli.py add -t "Draft" -b "Temporary note" --local-only
+```
+
+List local notes:
+
+```bash
 ./notecli.py list
+```
 
-# List notes directly from macOS Notes
+List notes directly from macOS Notes without importing them:
+
+```bash
 ./notecli.py list --system
+```
 
-# Import existing macOS Notes into notecli
+Import existing macOS Notes into the local index:
+
+```bash
 ./notecli.py sync
+```
 
-# Remove a note (the first 8 characters of the ID are sufficient)
+Delete a note by ID prefix:
+
+```bash
 ./notecli.py rm <ID>
+```
 
-# Beautify a note using the configured local LLM endpoint
+Beautify a note with the configured LLM:
+
+```bash
 ./notecli.py bfy <ID>
 ```
 
-## Data Storage
+## LLM Configuration
 
-Notes are saved in a local JSON file:
+`bfy` reads optional settings from:
+
+```text
+~/.notecli_config.json
 ```
+
+Example:
+
+```json
+{
+  "llm_api_url": "http://localhost:1234/v1/chat/completions",
+  "llm_model": "google/gemma-4-26b-a4b-qat"
+}
+```
+
+The endpoint should behave like OpenAI's chat completions API.
+
+## Data Model
+
+Local notes are stored in:
+
+```text
 ~/.notecli_data.json
 ```
-It is a simple array of objects. Notes synced to macOS include `metadata.macos_note_id`:
+
+Synced notes include the macOS Notes identifier in `metadata.macos_note_id`:
+
 ```json
 [
-  {"id": "uuid", "title": "...", "body": "...", "metadata": {"macos_note_id": "..."}},
-  ...
+  {
+    "id": "uuid",
+    "title": "Incident follow-up",
+    "body": "Check Grafana alerts after deploy",
+    "metadata": {
+      "macos_note_id": "x-coredata://..."
+    }
+  }
 ]
 ```
 
+Notes imported with `sync` get a local UUID and keep their system note ID, so later `rm` and `bfy` can target the linked Notes.app item.
+
+## Sync Behavior
+
+`notecli` is not a background sync daemon. It performs explicit operations:
+
+- `add` creates a local record and a system note.
+- `list` reads the local index.
+- `list --system` reads Notes.app directly.
+- `sync` imports Notes.app notes that are not already in the local index.
+- `rm` removes the local record and, when linked, deletes the system note.
+- `bfy` updates the local body and, when linked, updates the system note.
+
 ## License
 
-MIT – feel free to copy and modify.
+MIT
