@@ -1,6 +1,14 @@
-import requests
 import sys
+import warnings
 from typing import Optional
+
+warnings.filterwarnings(
+    "ignore",
+    message="urllib3 v2 only supports OpenSSL 1.1.1+.*",
+    category=Warning,
+)
+
+import requests
 
 
 def beautify_note_content(
