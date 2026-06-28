@@ -84,7 +84,7 @@ notecli addb -t "Raw idea" -b "need clean this up later"
 The same shorthand works with `addb`:
 
 ```bash
-notecli addb "shopping list; молоко мясо детям завтрак сосиски"
+notecli addb "shopping list; milk meat breakfast sausages"
 ```
 
 List local notes:

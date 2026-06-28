@@ -142,5 +142,5 @@ def cleanup_llm_note_body(content: str) -> str:
     if title_body_match and re.search(r"(?is)\btitle\s*:", content[: title_body_match.start()]):
         content = title_body_match.group(1).strip()
 
-    content = re.sub(r"(?im)^\s*(?:body|тело|заметка|note|improved note)\s*:\s*", "", content).strip()
+    content = re.sub(r"(?im)^\s*(?:body|note|improved note)\s*:\s*", "", content).strip()
     return content
