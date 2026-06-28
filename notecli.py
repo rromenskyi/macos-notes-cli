@@ -1,199 +1,183 @@
 #!/usr/bin/env python3
-"""
-notecli – a simple CLI note-taking tool with the ability to duplicate
-entries into the macOS Notes app.
-
-Usage:
-    notecli add   [-t TITLE] [-b BODY] [--to-notes]
-    notecli list
-    notecli rm    <id>
-"""
 
 import argparse
-import json
-import os
-import subprocess
 import sys
 import uuid
-import requests
 from pathlib import Path
 
-DATA_FILE = Path.home() / ".notecli_data.json"
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-
-def load_data() -> list[dict]:
-    if DATA_FILE.is_file():
-        return json.loads(DATA_FILE.read_text(encoding="utf-8"))
-    return []
-
-
-def save_data(data: list[dict]) -> None:
-    DATA_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
-def add_note(title: str, body: str, to_notes: bool) -> str:
-    note_id = str(uuid.uuid4())
-    note = {"id": note_id, "title": title, "body": body}
-    data = load_data()
-    data.append(note)
-    save_data(data)
-
-    if to_notes:
-        _send_to_macos_notes(title, body)
-
-    return note_id
-
-
-def _send_to_macos_notes(title: str, body: str) -> None:
-    """
-    Sends the note to the Notes app via AppleScript.
-    Requires automation permission in macOS (System Settings ->
-    Privacy & Security -> Automation -> Terminal -> Notes).
-    """
-    # Escape quotes and backslashes for AppleScript
-    esc_title = title.replace('\\', '\\\\').replace('"', r'\"')
-    esc_body = body.replace('\\', '\\\\').replace('"', r'\"')
-    applescript = f'''
-    tell application "Notes"
-        set theAccount to account "iCloud"
-        make new note at theAccount with properties {{name:"{esc_title}", body:"{esc_body}"}}
-    end tell
-    '''
-    try:
-        subprocess.run(
-            ["osascript", "-e", applescript],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-    except subprocess.CalledProcessError as e:
-        print(
-            f"[WARN] Failed to create note in Notes app: {e.stderr.strip()}",
-            file=sys.stderr,
-        )
-
-
-def list_notes() -> None:
-    data = load_data()
-    if not data:
-        print("No notes yet.")
-        return
-    for n in data:
-        if not isinstance(n, dict):
-            continue
-        print(f"[{n['id'][:8]}] {n['title'] or '(no title)'}")
-
-
-def remove_note(note_id: str) -> bool:
-    data = load_data()
-    # allow partial match (first 8 chars) for convenience
-    matched = [n for n in data if n["id"].startswith(note_id)]
-    if not matched:
-        return False
-    new_data = [n for n in data if not n["id"].startswith(note_id)]
-    save_data(new_data)
-    return True
-
+from notecli.core.models import Note
+from notecli.core.storage import load_data, find_note_by_id_prefix_or_exact, update_data
+from notecli.core.macos import (
+    create_macos_note,
+    delete_macos_note,
+    list_macos_notes,
+    update_macos_note,
+)
 
 CONFIG_FILE = Path.home() / ".notecli_config.json"
 
 def load_config() -> dict:
     if CONFIG_FILE.is_file():
         try:
+            import json
             return json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
         except Exception:
             pass
     return {}
 
-def beautify_note(note_id: str) -> bool:
-    """
-    Uses a local LLM (via LM Studio) to improve the note's content.
-    """
+def add_note(title: str, body: str, sync_to_notes: bool) -> tuple[str, bool]:
+    note_id = str(uuid.uuid4())
+    metadata = {}
+
+    if sync_to_notes:
+        macos_note_id = create_macos_note(title, body)
+        if macos_note_id:
+            metadata["macos_note_id"] = macos_note_id
+
+    new_note = Note(id=note_id, title=title, body=body, metadata=metadata)
+
+    def append_note(notes: list[Note]) -> list[Note]:
+        notes.append(new_note)
+        return notes
+
+    update_data(append_note)
+
+    return note_id, bool(metadata.get("macos_note_id"))
+
+def list_notes(system: bool = False) -> None:
+    if system:
+        notes = list_macos_notes()
+        if not notes:
+            print("No notes found in Notes app.")
+            return
+        for n in notes:
+            print(f"[system] {n['title'] or '(no title)'}")
+        return
+
+    notes = load_data()
+    if not notes:
+        print("No notes yet.")
+        return
+    for n in notes:
+        print(f"[{n.id[:8]}] {n.title or '(no title)'}")
+
+def sync_macos_notes() -> int:
+    system_notes = list_macos_notes()
+    if not system_notes:
+        return 0
+
+    imported_count = 0
+
+    def import_notes(notes: list[Note]) -> list[Note]:
+        nonlocal imported_count
+        existing_macos_ids = {
+            n.metadata.get("macos_note_id")
+            for n in notes
+            if n.metadata.get("macos_note_id")
+        }
+
+        for system_note in system_notes:
+            macos_note_id = system_note["id"]
+            if macos_note_id in existing_macos_ids:
+                continue
+
+            notes.append(
+                Note(
+                    id=str(uuid.uuid4()),
+                    title=system_note["title"],
+                    body=system_note["body"],
+                    metadata={"macos_note_id": macos_note_id},
+                )
+            )
+            existing_macos_ids.add(macos_note_id)
+            imported_count += 1
+
+        return notes
+
+    update_data(import_notes)
+    return imported_count
+
+def remove_note(note_id_prefix: str) -> bool:
+    matched = find_note_by_id_prefix_or_exact(note_id_prefix)
+    if not matched:
+        return False
+
+    macos_note_id = matched.metadata.get("macos_note_id")
+    if macos_note_id:
+        delete_macos_note(macos_note_id)
+
+    update_data(lambda notes: [n for n in notes if n.id != matched.id])
+    return True
+
+def beautify_note(note_id_prefix: str) -> bool:
+    from notecli.core.llm import beautify_note_content
+
     config = load_config()
     api_url = config.get("llm_api_url", "http://localhost:1234/v1/chat/completions")
     model_name = config.get("llm_model", "local-model")
 
-    data = load_data()
-    matched = [n for n in data if n["id"].startswith(note_id)]
-    if not matched:
+    note = find_note_by_id_prefix_or_exact(note_id_prefix)
+    if not note:
         return False
     
-    note = matched[0]
-    original_title = note["title"]
-    original_body = note["body"]
+    new_body = beautify_note_content(note.title, note.body, api_url, model_name)
+    
+    if new_body:
+        macos_note_id = note.metadata.get("macos_note_id")
+        if macos_note_id:
+            update_macos_note(macos_note_id, note.title, new_body)
 
-    prompt = f"""Improve the following note without changing its language. 
-If there are multiple lines, keep the original grammar and structure, but make it look cleaner and more organized. 
-Return ONLY the improved text. Do not include any explanations or conversational filler.
-
-Title: {original_title}
-Body: {original_body}
-"""
-
-    payload = {
-        "messages": [
-            {"role": "system", "content": "You are a helpful assistant that improves notes."},
-            {"role": "user", "content": prompt}
-        ],
-        "temperature": 0.7,
-        "model": model_name
-    }
-
-    try:
-        response = requests.post(api_url, json=payload, timeout=120)
-        response.raise_for_status()
-        result = response.json()
-        new_content = result["choices"][0]["message"]["content"].strip()
-        
-        note["body"] = new_content
-        save_data(data)
+        update_data(
+            lambda notes: [
+                Note(id=n.id, title=n.title, body=new_body, metadata=n.metadata)
+                if n.id == note.id
+                else n
+                for n in notes
+            ]
+        )
         return True
-    except Exception as e:
-        print(f"[ERROR] Failed to connect to LM Studio: {e}", file=sys.stderr)
-        return False
-
+    return False
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(
-        description="A simple CLI note-taking tool with an option to sync to macOS Notes"
-    )
+    p = argparse.ArgumentParser(description="A simple CLI note-taking tool")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    # add
     add_p = sub.add_parser("add", help="Add a new note")
     add_p.add_argument("-t", "--title", default="", help="Note title")
     add_p.add_argument("-b", "--body", default="", help="Note body")
-    add_p.add_argument(
-        "--to-notes",
-        action="store_true",
-        help="Also create a note in the macOS Notes app",
-    )
+    add_p.add_argument("--local-only", action="store_true", help="Do not sync to macOS Notes")
+    add_p.add_argument("--to-notes", action="store_true", help=argparse.SUPPRESS)
 
-    # list
-    sub.add_parser("list", help="List all notes")
+    list_p = sub.add_parser("list", help="List notes")
+    list_p.add_argument("--system", action="store_true", help="List notes directly from macOS Notes")
 
-    # rm
-    rm_p = sub.add_parser("rm", help="Remove note by ID (first 8 chars suffice)")
-    rm_p.add_argument("id", help="Note ID (first 8 characters suffice)")
+    sub.add_parser("sync", help="Import macOS Notes into the local notecli index")
 
-    # beautify
-    beau_p = sub.add_parser("bfy", help="Beautify note using LLM (LM Studio)")
-    beau_p.add_argument("id", help="Note ID (first 8 characters suffice)")
+    rm_p = sub.add_parser("rm", help="Remove note by ID prefix")
+    rm_p.add_argument("id", help="Note ID prefix")
+
+    beau_p = sub.add_parser("bfy", help="Beautify note using LLM")
+    beau_p.add_argument("id", help="Note ID prefix")
 
     return p
-
 
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
 
     if args.cmd == "add":
-        note_id = add_note(args.title, args.body, args.to_notes)
+        note_id, synced_to_notes = add_note(args.title, args.body, not args.local_only)
         print(f"Note added (id={note_id[:8]})")
-        if args.to_notes:
-            print("→ also created in Notes app")
+        if synced_to_notes:
+            print("Also created in Notes app")
     elif args.cmd == "list":
-        list_notes()
+        list_notes(args.system)
+    elif args.cmd == "sync":
+        imported_count = sync_macos_notes()
+        print(f"Imported {imported_count} notes from Notes app")
     elif args.cmd == "rm":
         if remove_note(args.id):
             print(f"Note {args.id} removed")
@@ -207,6 +191,5 @@ def main() -> None:
             print(f"Failed to beautify note {args.id}", file=sys.stderr)
             sys.exit(1)
 
-
 if __name__ == "__main__":
-    main()# Agent edit: demonstration
+    main()
