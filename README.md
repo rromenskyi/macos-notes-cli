@@ -15,7 +15,7 @@ It is built for a simple workflow: add a note from the terminal, have it appear 
 - Show a full local note by ID prefix.
 - Import existing Notes.app notes into the local index.
 - Delete linked system notes with `rm`.
-- Beautify note bodies through a local OpenAI-compatible chat endpoint such as LM Studio.
+- Beautify note titles and bodies through a local OpenAI-compatible chat endpoint such as LM Studio.
 - Use `--local-only` when you do not want to create a system note.
 
 ## Requirements
@@ -105,7 +105,7 @@ Delete a note by ID prefix:
 notecli rm <ID>
 ```
 
-Beautify a note with the configured LLM:
+Beautify a note title and body with the configured LLM:
 
 ```bash
 notecli bfy <ID>

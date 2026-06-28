@@ -1,6 +1,8 @@
+import json
+import re
 import sys
 import warnings
-from typing import Optional
+from typing import Optional, Tuple
 
 warnings.filterwarnings(
     "ignore",
@@ -17,26 +19,33 @@ def beautify_note_content(
     api_url: str,
     model_name: str,
     timeout: int
-) -> Optional[str]:
+) -> Optional[Tuple[str, str]]:
     """
-    Uses a local LLM to improve the note's content.
-    Returns the improved text or None on failure.
+    Uses a local LLM to improve the note title and body.
+    Returns the improved title/body pair or None on failure.
     """
-    # Use a more structured prompt to reduce hallucination
-    prompt = f"""Improve the following note without changing its language.
-If there are multiple lines, keep the original grammar and structure, but make it look cleaner and more organized.
-Return ONLY the improved text. Do not include any explanations or conversational filler.
-
-Title: {original_title}
-Body: {original_body}
+    prompt = f"""Original note:
+{{
+  "title": {json.dumps(original_title, ensure_ascii=False)},
+  "body": {json.dumps(original_body, ensure_ascii=False)}
+}}
 """
 
     payload = {
         "messages": [
-            {"role": "system", "content": "You are a helpful assistant that improves notes. Return only the improved note content."},
+            {
+                "role": "system",
+                "content": (
+                    "You improve short notes. "
+                    "Return strict JSON only, with exactly two string fields: title and body. "
+                    "Improve both fields without changing the note language. "
+                    "Do not add explanations or Markdown fences. "
+                    "If the body is a simple list of items, format body as a clean Markdown bullet list."
+                ),
+            },
             {"role": "user", "content": prompt}
         ],
-        "temperature": 0.3,
+        "temperature": 0.1,
         "model": model_name,
         "think": False,
         "stream": False
@@ -82,20 +91,56 @@ Body: {original_body}
         print("[ERROR] Unexpected LLM response: missing 'message'", file=sys.stderr)
         return None
 
-    new_content = message.get("content")
-    if not isinstance(new_content, str):
+    raw_content = message.get("content")
+    if not isinstance(raw_content, str):
         print("[ERROR] Unexpected LLM response: missing 'content'", file=sys.stderr)
         return None
 
-    new_content = new_content.strip()
-    if not new_content:
+    new_title, new_body = parse_llm_note_response(raw_content, original_title)
+    if not new_title and original_title:
+        new_title = original_title
+    if not new_body:
         print("[ERROR] LLM returned empty content", file=sys.stderr)
         return None
 
     # Basic sanity check: content shouldn't be excessively larger than input
     input_len = len(original_title) + len(original_body)
-    if len(new_content) > input_len * 5:  # Arbitrary but reasonable limit
+    if len(new_title) + len(new_body) > input_len * 5:  # Arbitrary but reasonable limit
         print("[WARN] LLM output suspiciously large, may contain hallucination", file=sys.stderr)
         # Still return it but warn
 
-    return new_content
+    return new_title, new_body
+
+
+def parse_llm_note_response(content: str, fallback_title: str) -> Tuple[str, str]:
+    content = cleanup_markdown_fence(content)
+    try:
+        parsed = json.loads(content)
+        if isinstance(parsed, dict):
+            title = parsed.get("title")
+            body = parsed.get("body")
+            if isinstance(title, str) and isinstance(body, str):
+                return title.strip(), cleanup_llm_note_body(body).strip()
+    except ValueError:
+        pass
+
+    return fallback_title, cleanup_llm_note_body(content).strip()
+
+
+def cleanup_markdown_fence(content: str) -> str:
+    return re.sub(
+        r"(?is)^```(?:json|markdown|md|text)?\s*(.*?)\s*```$",
+        r"\1",
+        content.strip(),
+    ).strip()
+
+
+def cleanup_llm_note_body(content: str) -> str:
+    content = cleanup_markdown_fence(content)
+
+    title_body_match = re.search(r"(?is)\bbody\s*:\s*(.+)$", content)
+    if title_body_match and re.search(r"(?is)\btitle\s*:", content[: title_body_match.start()]):
+        content = title_body_match.group(1).strip()
+
+    content = re.sub(r"(?im)^\s*(?:body|тело|заметка|note|improved note)\s*:\s*", "", content).strip()
+    return content

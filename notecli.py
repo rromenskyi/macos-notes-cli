@@ -194,7 +194,7 @@ def beautify_note(note_id_prefix: str) -> bool:
 
     from notecli.core.llm import beautify_note_content
     
-    new_body = beautify_note_content(
+    improved_note = beautify_note_content(
         note.title,
         note.body,
         llm_config["api_url"],
@@ -202,14 +202,15 @@ def beautify_note(note_id_prefix: str) -> bool:
         llm_config["timeout"],
     )
     
-    if new_body:
+    if improved_note:
+        new_title, new_body = improved_note
         macos_note_id = note.metadata.get("macos_note_id")
         if macos_note_id:
-            update_macos_note(macos_note_id, note.title, new_body)
+            update_macos_note(macos_note_id, new_title, new_body)
 
         update_data(
             lambda notes: [
-                Note(id=n.id, title=n.title, body=new_body, metadata=n.metadata)
+                Note(id=n.id, title=new_title, body=new_body, metadata=n.metadata)
                 if n.id == note.id
                 else n
                 for n in notes
