@@ -28,8 +28,15 @@ It is built for a simple workflow: add a note from the terminal, have it appear 
 ```bash
 git clone https://github.com/rromenskyi/macos-notes-cli.git
 cd macos-notes-cli
-python3 -m pip install -r requirements.txt
-chmod +x notecli.py
+./install.sh
+```
+
+The installer creates a local virtual environment in `.venv`, installs dependencies from `requirements.txt`, and writes a launcher to `~/.local/bin/notecli`.
+
+If `notecli` is not found after installation, add `~/.local/bin` to your shell `PATH`:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
 ```
 
 Grant Notes automation permission when macOS asks for it. You can also check it manually in:
@@ -45,43 +52,49 @@ Enable access from your terminal app to Notes.
 Add a note. By default this writes to the local index and creates a linked note in macOS Notes:
 
 ```bash
-./notecli.py add -t "Incident follow-up" -b "Check Grafana alerts after deploy"
+notecli add -t "Incident follow-up" -b "Check Grafana alerts after deploy"
 ```
 
 Add a local-only note:
 
 ```bash
-./notecli.py add -t "Draft" -b "Temporary note" --local-only
+notecli add -t "Draft" -b "Temporary note" --local-only
 ```
 
 List local notes:
 
 ```bash
-./notecli.py list
+notecli list
 ```
 
 List notes directly from macOS Notes without importing them:
 
 ```bash
-./notecli.py list --system
+notecli list --system
 ```
 
 Import existing macOS Notes into the local index:
 
 ```bash
-./notecli.py sync
+notecli sync
 ```
 
 Delete a note by ID prefix:
 
 ```bash
-./notecli.py rm <ID>
+notecli rm <ID>
 ```
 
 Beautify a note with the configured LLM:
 
 ```bash
-./notecli.py bfy <ID>
+notecli bfy <ID>
+```
+
+For development, you can still run the script directly:
+
+```bash
+./notecli.py list
 ```
 
 ## LLM Configuration

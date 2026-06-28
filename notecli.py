@@ -142,7 +142,7 @@ def beautify_note(note_id_prefix: str) -> bool:
     return False
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="A simple CLI note-taking tool")
+    p = argparse.ArgumentParser(prog="notecli", description="A simple CLI note-taking tool")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     add_p = sub.add_parser("add", help="Add a new note")
