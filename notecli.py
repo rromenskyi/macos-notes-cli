@@ -50,11 +50,14 @@ def load_llm_config() -> Optional[dict]:
     if not api_url or not model_name:
         print_llm_config_help()
         return None
-    return {
+    llm_config = {
         "api_url": api_url,
         "model_name": model_name,
         "timeout": int(config.get("llm_timeout", 120)),
     }
+    if config.get("llm_max_tokens"):
+        llm_config["max_tokens"] = int(config["llm_max_tokens"])
+    return llm_config
 
 def resolve_note_input(args) -> tuple[str, str]:
     positional_title, positional_body = parse_positional_note_text(args.text)
@@ -202,24 +205,28 @@ def remove_note(note_id_prefix: str) -> bool:
     update_data(lambda notes: [n for n in notes if n.id != matched.id])
     return True
 
+def improve_note_text(title: str, body: str) -> Optional[tuple[str, str]]:
+    llm_config = load_llm_config()
+    if not llm_config:
+        return None
+
+    from notecli.core.llm import beautify_note_content
+
+    return beautify_note_content(
+        title,
+        body,
+        llm_config["api_url"],
+        llm_config["model_name"],
+        llm_config["timeout"],
+        llm_config.get("max_tokens"),
+    )
+
 def beautify_note(note_id_prefix: str) -> bool:
     note = find_note_by_id_prefix_or_exact(note_id_prefix)
     if not note:
         return False
 
-    llm_config = load_llm_config()
-    if not llm_config:
-        return False
-
-    from notecli.core.llm import beautify_note_content
-    
-    improved_note = beautify_note_content(
-        note.title,
-        note.body,
-        llm_config["api_url"],
-        llm_config["model_name"],
-        llm_config["timeout"],
-    )
+    improved_note = improve_note_text(note.title, note.body)
     
     if improved_note:
         new_title, new_body = improved_note
@@ -284,15 +291,14 @@ def main() -> None:
         if synced_to_notes:
             print("Also created in Notes app")
     elif args.cmd == "addb":
-        if not load_llm_config():
-            sys.exit(1)
         title, body = resolve_note_input(args)
-        note_id, synced_to_notes = add_note(title, body, not args.local_only)
-        if beautify_note(note_id):
-            print(f"Note added and beautified (id={note_id[:8]})")
-        else:
-            print(f"Note added but beautify failed (id={note_id[:8]})", file=sys.stderr)
+        improved_note = improve_note_text(title, body)
+        if not improved_note:
+            print("Beautify failed; note was not added.", file=sys.stderr)
             sys.exit(1)
+        improved_title, improved_body = improved_note
+        note_id, synced_to_notes = add_note(improved_title, improved_body, not args.local_only)
+        print(f"Note added and beautified (id={note_id[:8]})")
         if synced_to_notes:
             print("Also created in Notes app")
     elif args.cmd == "list":

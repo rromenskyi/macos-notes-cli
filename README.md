@@ -151,6 +151,8 @@ The endpoint should behave like OpenAI's chat completions API.
 
 If this file is missing, `bfy` and `addb` do not try to guess defaults. They print the required config shape and exit without waiting on a network timeout. Increase `llm_timeout` if your local model needs more time to load on the first request.
 
+`notecli` also sends provider-specific flags to disable reasoning where supported. If you still need to cap output size, add an optional `llm_max_tokens` value to the config.
+
 ## Data Model
 
 Local notes are stored in:

@@ -18,7 +18,8 @@ def beautify_note_content(
     original_body: str,
     api_url: str,
     model_name: str,
-    timeout: int
+    timeout: int,
+    max_tokens: Optional[int] = None,
 ) -> Optional[Tuple[str, str]]:
     """
     Uses a local LLM to improve the note title and body.
@@ -40,6 +41,7 @@ def beautify_note_content(
                     "Return strict JSON only, with exactly two string fields: title and body. "
                     "Improve both fields without changing the note language. "
                     "Do not add explanations or Markdown fences. "
+                    "Do not output chain-of-thought, reasoning, analysis, or hidden thoughts. "
                     "If the body is a simple list of items, format body as a clean Markdown bullet list."
                 ),
             },
@@ -48,8 +50,12 @@ def beautify_note_content(
         "temperature": 0.1,
         "model": model_name,
         "think": False,
+        "reasoning": {"effort": "none"},
+        "reasoning_effort": "none",
         "stream": False
     }
+    if max_tokens:
+        payload["max_tokens"] = max_tokens
 
     try:
         response = requests.post(api_url, json=payload, timeout=timeout)
