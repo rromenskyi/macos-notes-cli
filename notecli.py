@@ -56,6 +56,25 @@ def load_llm_config() -> Optional[dict]:
         "timeout": int(config.get("llm_timeout", 120)),
     }
 
+def resolve_note_input(args) -> tuple[str, str]:
+    positional_title, positional_body = parse_positional_note_text(args.text)
+    title = args.title or positional_title
+    body = args.body or positional_body
+    return collect_note_input(title, body, args.edit)
+
+def parse_positional_note_text(parts: list[str]) -> tuple[str, str]:
+    if not parts:
+        return "", ""
+
+    raw = " ".join(parts).strip()
+    if ";" in raw:
+        title, body = raw.split(";", 1)
+        return title.strip(), body.strip()
+
+    title = parts[0].strip()
+    body = " ".join(parts[1:]).strip()
+    return title, body
+
 def collect_note_input(title: str, body: str, edit: bool) -> tuple[str, str]:
     if edit:
         return collect_note_input_from_editor(title, body)
@@ -224,6 +243,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="cmd", required=True)
 
     add_p = sub.add_parser("add", help="Add a new note")
+    add_p.add_argument("text", nargs="*", help='Note text, e.g. "title; body"')
     add_p.add_argument("-t", "--title", default="", help="Note title")
     add_p.add_argument("-b", "--body", default="", help="Note body")
     add_p.add_argument("-e", "--edit", action="store_true", help="Open an editor to write the note")
@@ -231,6 +251,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_p.add_argument("--to-notes", action="store_true", help=argparse.SUPPRESS)
 
     addb_p = sub.add_parser("addb", help="Add a new note and beautify it")
+    addb_p.add_argument("text", nargs="*", help='Note text, e.g. "title; body"')
     addb_p.add_argument("-t", "--title", default="", help="Note title")
     addb_p.add_argument("-b", "--body", default="", help="Note body")
     addb_p.add_argument("-e", "--edit", action="store_true", help="Open an editor to write the note")
@@ -257,7 +278,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.cmd == "add":
-        title, body = collect_note_input(args.title, args.body, args.edit)
+        title, body = resolve_note_input(args)
         note_id, synced_to_notes = add_note(title, body, not args.local_only)
         print(f"Note added (id={note_id[:8]})")
         if synced_to_notes:
@@ -265,7 +286,7 @@ def main() -> None:
     elif args.cmd == "addb":
         if not load_llm_config():
             sys.exit(1)
-        title, body = collect_note_input(args.title, args.body, args.edit)
+        title, body = resolve_note_input(args)
         note_id, synced_to_notes = add_note(title, body, not args.local_only)
         if beautify_note(note_id):
             print(f"Note added and beautified (id={note_id[:8]})")

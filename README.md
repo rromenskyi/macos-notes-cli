@@ -57,6 +57,12 @@ Add a note. By default this writes to the local index and creates a linked note 
 notecli add -t "Incident follow-up" -b "Check Grafana alerts after deploy"
 ```
 
+You can also write a note as one quoted argument separated by `;`:
+
+```bash
+notecli add "Incident follow-up; Check Grafana alerts after deploy"
+```
+
 Add a local-only note:
 
 ```bash
@@ -73,6 +79,12 @@ Add a note and immediately beautify it with the configured LLM:
 
 ```bash
 notecli addb -t "Raw idea" -b "need clean this up later"
+```
+
+The same shorthand works with `addb`:
+
+```bash
+notecli addb "shopping list; молоко мясо детям завтрак сосиски"
 ```
 
 List local notes:
