@@ -17,7 +17,9 @@ from notecli.core.storage import load_data, find_note_by_id_prefix_or_exact, upd
 from notecli.core.macos import (
     create_macos_note,
     delete_macos_note,
+    get_macos_note,
     list_macos_notes,
+    normalize_notes_body,
     update_macos_note,
 )
 
@@ -230,16 +232,57 @@ def improve_note_text(title: str, body: str) -> Optional[tuple[str, str]]:
         llm_config.get("max_tokens"),
     )
 
+def choose_conflict_source(local_note: Note, remote_note: dict) -> Optional[str]:
+    print("Linked macOS note has changed outside notecli.", file=sys.stderr)
+    print(f"Local title:  {local_note.title}", file=sys.stderr)
+    print(f"Remote title: {remote_note['title']}", file=sys.stderr)
+
+    if not sys.stdin.isatty():
+        print("Run in an interactive terminal to choose local or remote changes.", file=sys.stderr)
+        return None
+
+    answer = input("Use remote Notes.app version before beautifying? [Y/n] ")
+    if answer.strip().lower() in ("n", "no", "local", "l"):
+        return "local"
+    return "remote"
+
+def macos_note_changed(local_note: Note, remote_note: dict) -> bool:
+    return (
+        local_note.title.strip() != remote_note["title"].strip()
+        or normalize_notes_body(local_note.body) != normalize_notes_body(remote_note["body"])
+    )
+
 def beautify_note(note_id_prefix: str) -> bool:
     note = find_note_by_id_prefix_or_exact(note_id_prefix)
     if not note:
         return False
 
+    macos_note_id = note.metadata.get("macos_note_id")
+    if macos_note_id:
+        remote_note = get_macos_note(macos_note_id)
+        if remote_note and macos_note_changed(note, remote_note):
+            source = choose_conflict_source(note, remote_note)
+            if not source:
+                print("Aborted. No changes were made.", file=sys.stderr)
+                return False
+            if source == "remote":
+                note = Note(
+                    id=note.id,
+                    title=remote_note["title"],
+                    body=normalize_notes_body(remote_note["body"]),
+                    metadata=note.metadata,
+                )
+                update_data(
+                    lambda notes: [
+                        note if n.id == note.id else n
+                        for n in notes
+                    ]
+                )
+
     improved_note = improve_note_text(note.title, note.body)
     
     if improved_note:
         new_title, new_body = improved_note
-        macos_note_id = note.metadata.get("macos_note_id")
         if macos_note_id:
             update_macos_note(macos_note_id, new_title, new_body)
 

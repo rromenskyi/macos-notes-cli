@@ -196,6 +196,7 @@ Notes imported with `sync` get a local UUID and keep their system note ID, so la
 - `sync` imports Notes.app notes that are not already in the local index.
 - `rm` removes the local record and, when linked, deletes the system note.
 - `bfy` updates the local body and, when linked, updates the system note.
+- If a linked note was edited directly in Notes.app, `bfy` asks whether to use the remote Notes.app version or keep the local version before beautifying.
 
 ## License
 

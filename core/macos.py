@@ -1,5 +1,7 @@
 import subprocess
 import sys
+import re
+import html
 from typing import Optional
 
 NOTE_FIELD_SEPARATOR = "\x1f"
@@ -59,6 +61,45 @@ def update_macos_note(note_id: str, title: str, body: str) -> bool:
     end run
     '''
     return _run_note_script(applescript, [note_id, title, body], "update")
+
+
+def get_macos_note(note_id: str) -> Optional[dict]:
+    applescript = '''
+    on run argv
+        set noteId to item 1 of argv
+        set fieldSeparator to ASCII character 31
+        tell application "Notes"
+            set targetNote to note id noteId
+            return (id of targetNote) & fieldSeparator & (name of targetNote) & fieldSeparator & (body of targetNote)
+        end tell
+    end run
+    '''
+    try:
+        result = subprocess.run(
+            ["osascript", "-", note_id],
+            input=applescript,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except subprocess.CalledProcessError as e:
+        print(
+            f"[WARN] Failed to read note in Notes app: {e.stderr.strip()}",
+            file=sys.stderr,
+        )
+        return None
+    except FileNotFoundError:
+        print(
+            "[WARN] 'osascript' not found. Are you on macOS?",
+            file=sys.stderr,
+        )
+        return None
+
+    parts = result.stdout.strip().split(NOTE_FIELD_SEPARATOR, 2)
+    if len(parts) != 3:
+        return None
+    note_id, title, body = parts
+    return {"id": note_id, "title": title, "body": body}
 
 
 def delete_macos_note(note_id: str) -> bool:
@@ -127,6 +168,15 @@ def list_macos_notes() -> list[dict]:
         note_id, title, body = parts
         notes.append({"id": note_id, "title": title, "body": body})
     return notes
+
+
+def normalize_notes_body(body: str) -> str:
+    text = html.unescape(body)
+    text = re.sub(r"(?is)<br\s*/?>", "\n", text)
+    text = re.sub(r"(?is)</p\s*>", "\n", text)
+    text = re.sub(r"(?is)<[^>]+>", "", text)
+    lines = [line.strip() for line in text.splitlines()]
+    return "\n".join(line for line in lines if line).strip()
 
 
 def _run_note_script(applescript: str, args: list[str], action: str) -> bool:
