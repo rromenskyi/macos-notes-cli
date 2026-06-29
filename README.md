@@ -171,6 +171,20 @@ If this file is missing, `bfy` and `addb` do not try to guess defaults. They pri
 
 `notecli` also sends provider-specific flags to disable reasoning where supported. If you still need to cap output size, add an optional `llm_max_tokens` value to the config.
 
+## Note Formatting
+
+Write note bodies as plain text or simple Markdown:
+
+```text
+Shopping list
+
+- Milk
+- Meat
+- Sausages
+```
+
+`notecli` stores that Markdown-like text locally and converts it to simple Notes.app HTML when writing to macOS Notes, so paragraphs and bullet lists render cleanly in the system app.
+
 ## Data Model
 
 Local notes are stored in:

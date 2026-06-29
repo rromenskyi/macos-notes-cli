@@ -26,7 +26,7 @@ def create_macos_note(title: str, body: str) -> Optional[str]:
     '''
     try:
         result = subprocess.run(
-            ["osascript", "-", title, body],
+            ["osascript", "-", title, markdown_to_notes_html(body)],
             input=applescript,
             check=True,
             capture_output=True,
@@ -60,7 +60,7 @@ def update_macos_note(note_id: str, title: str, body: str) -> bool:
         end tell
     end run
     '''
-    return _run_note_script(applescript, [note_id, title, body], "update")
+    return _run_note_script(applescript, [note_id, title, markdown_to_notes_html(body)], "update")
 
 
 def get_macos_note(note_id: str) -> Optional[dict]:
@@ -170,13 +170,63 @@ def list_macos_notes() -> list[dict]:
     return notes
 
 
-def normalize_notes_body(body: str) -> str:
+def normalize_notes_body(body: str, title: str = "") -> str:
     text = html.unescape(body)
+    text = re.sub(r"(?is)<li[^>]*>", "\n- ", text)
+    text = re.sub(r"(?is)</li\s*>", "", text)
     text = re.sub(r"(?is)<br\s*/?>", "\n", text)
     text = re.sub(r"(?is)</p\s*>", "\n", text)
+    text = re.sub(r"(?is)</div\s*>", "\n", text)
     text = re.sub(r"(?is)<[^>]+>", "", text)
     lines = [line.strip() for line in text.splitlines()]
-    return "\n".join(line for line in lines if line).strip()
+    normalized_lines = [line for line in lines if line]
+    if title and normalized_lines and normalized_lines[0] == title.strip():
+        normalized_lines = normalized_lines[1:]
+    return "\n".join(normalized_lines).strip()
+
+
+def markdown_to_notes_html(body: str) -> str:
+    lines = body.splitlines()
+    blocks = []
+    paragraph = []
+    list_items = []
+
+    def flush_paragraph():
+        if paragraph:
+            escaped = "<br>".join(html.escape(line) for line in paragraph)
+            blocks.append(f"<p>{escaped}</p>")
+            paragraph.clear()
+
+    def flush_list():
+        if list_items:
+            items = "".join(f"<li>{html.escape(item)}</li>" for item in list_items)
+            blocks.append(f"<ul>{items}</ul>")
+            list_items.clear()
+
+    for raw_line in lines:
+        line = raw_line.rstrip()
+        stripped = line.strip()
+        if not stripped:
+            flush_paragraph()
+            flush_list()
+            continue
+
+        bullet_match = re.match(r"^[-*]\s+(.+)$", stripped)
+        numbered_match = re.match(r"^\d+[.)]\s+(.+)$", stripped)
+        if bullet_match or numbered_match:
+            flush_paragraph()
+            list_items.append((bullet_match or numbered_match).group(1).strip())
+            continue
+
+        flush_list()
+        paragraph.append(stripped)
+
+    flush_paragraph()
+    flush_list()
+
+    if not blocks:
+        return ""
+    return "".join(blocks)
 
 
 def _run_note_script(applescript: str, args: list[str], action: str) -> bool:

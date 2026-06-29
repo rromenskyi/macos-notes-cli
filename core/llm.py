@@ -42,7 +42,10 @@ def beautify_note_content(
                     "Improve both fields without changing the note language. "
                     "Do not add explanations or Markdown fences. "
                     "Do not output chain-of-thought, reasoning, analysis, or hidden thoughts. "
-                    "If the body is a simple list of items, format body as a clean Markdown bullet list."
+                    "Keep title short and natural. "
+                    "Write body as plain Markdown, not HTML. "
+                    "Use blank lines between paragraphs. "
+                    "If the body is a simple list of items, format body as a clean Markdown bullet list using '- '."
                 ),
             },
             {"role": "user", "content": prompt}

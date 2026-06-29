@@ -192,7 +192,7 @@ def sync_macos_notes() -> int:
                 Note(
                     id=str(uuid.uuid4()),
                     title=system_note["title"],
-                    body=system_note["body"],
+                    body=normalize_notes_body(system_note["body"], system_note["title"]),
                     metadata={"macos_note_id": macos_note_id},
                 )
             )
@@ -230,7 +230,7 @@ def sync_pull_macos_notes() -> tuple[int, int]:
             pulled_note = Note(
                 id=note.id,
                 title=system_note["title"],
-                body=normalize_notes_body(system_note["body"]),
+                body=normalize_notes_body(system_note["body"], system_note["title"]),
                 metadata=note.metadata,
             )
             if pulled_note.title != note.title or pulled_note.body != note.body:
@@ -245,7 +245,7 @@ def sync_pull_macos_notes() -> tuple[int, int]:
                 Note(
                     id=str(uuid.uuid4()),
                     title=system_note["title"],
-                    body=normalize_notes_body(system_note["body"]),
+                    body=normalize_notes_body(system_note["body"], system_note["title"]),
                     metadata={"macos_note_id": macos_note_id},
                 )
             )
@@ -341,7 +341,7 @@ def choose_conflict_source(local_note: Note, remote_note: dict) -> Optional[str]
 def macos_note_changed(local_note: Note, remote_note: dict) -> bool:
     return (
         local_note.title.strip() != remote_note["title"].strip()
-        or normalize_notes_body(local_note.body) != normalize_notes_body(remote_note["body"])
+        or normalize_notes_body(local_note.body) != normalize_notes_body(remote_note["body"], remote_note["title"])
     )
 
 def beautify_note(note_id_prefix: str) -> bool:
@@ -361,7 +361,7 @@ def beautify_note(note_id_prefix: str) -> bool:
                 note = Note(
                     id=note.id,
                     title=remote_note["title"],
-                    body=normalize_notes_body(remote_note["body"]),
+                    body=normalize_notes_body(remote_note["body"], remote_note["title"]),
                     metadata=note.metadata,
                 )
                 update_data(
