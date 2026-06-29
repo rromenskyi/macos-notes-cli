@@ -204,6 +204,98 @@ def sync_macos_notes() -> int:
     update_data(import_notes)
     return imported_count
 
+def sync_pull_macos_notes() -> tuple[int, int]:
+    system_notes = list_macos_notes()
+    system_by_id = {n["id"]: n for n in system_notes}
+    imported_count = 0
+    updated_count = 0
+
+    def pull_notes(notes: list[Note]) -> list[Note]:
+        nonlocal imported_count, updated_count
+        existing_macos_ids = set()
+        pulled_notes = []
+
+        for note in notes:
+            macos_note_id = note.metadata.get("macos_note_id")
+            if not macos_note_id:
+                pulled_notes.append(note)
+                continue
+
+            existing_macos_ids.add(macos_note_id)
+            system_note = system_by_id.get(macos_note_id)
+            if not system_note:
+                pulled_notes.append(note)
+                continue
+
+            pulled_note = Note(
+                id=note.id,
+                title=system_note["title"],
+                body=normalize_notes_body(system_note["body"]),
+                metadata=note.metadata,
+            )
+            if pulled_note.title != note.title or pulled_note.body != note.body:
+                updated_count += 1
+            pulled_notes.append(pulled_note)
+
+        for system_note in system_notes:
+            macos_note_id = system_note["id"]
+            if macos_note_id in existing_macos_ids:
+                continue
+            pulled_notes.append(
+                Note(
+                    id=str(uuid.uuid4()),
+                    title=system_note["title"],
+                    body=normalize_notes_body(system_note["body"]),
+                    metadata={"macos_note_id": macos_note_id},
+                )
+            )
+            existing_macos_ids.add(macos_note_id)
+            imported_count += 1
+
+        return pulled_notes
+
+    update_data(pull_notes)
+    return imported_count, updated_count
+
+def sync_push_macos_notes() -> tuple[int, int]:
+    notes = load_data()
+    created_ids = {}
+    updated_count = 0
+
+    for note in notes:
+        macos_note_id = note.metadata.get("macos_note_id")
+        if macos_note_id and get_macos_note(macos_note_id):
+            if update_macos_note(macos_note_id, note.title, note.body):
+                updated_count += 1
+            continue
+
+        new_macos_note_id = create_macos_note(note.title, note.body)
+        if new_macos_note_id:
+            created_ids[note.id] = new_macos_note_id
+
+    if created_ids:
+        def update_metadata(current_notes: list[Note]) -> list[Note]:
+            updated_notes = []
+            for note in current_notes:
+                if note.id not in created_ids:
+                    updated_notes.append(note)
+                    continue
+                metadata = dict(note.metadata)
+                metadata["macos_note_id"] = created_ids[note.id]
+                updated_notes.append(
+                    Note(
+                        id=note.id,
+                        title=note.title,
+                        body=note.body,
+                        metadata=metadata,
+                    )
+                )
+            return updated_notes
+
+        update_data(update_metadata)
+
+    return len(created_ids), updated_count
+
 def remove_note(note_id_prefix: str) -> bool:
     matched = find_note_by_id_prefix_or_exact(note_id_prefix)
     if not matched:
@@ -319,7 +411,10 @@ def build_parser() -> argparse.ArgumentParser:
     list_p = sub.add_parser("list", help="List notes")
     list_p.add_argument("--system", action="store_true", help="List notes directly from macOS Notes")
 
-    sub.add_parser("sync", help="Import macOS Notes into the local notecli index")
+    sync_p = sub.add_parser("sync", help="Sync with macOS Notes")
+    sync_mode = sync_p.add_mutually_exclusive_group()
+    sync_mode.add_argument("--pull", action="store_true", help="Update local notes from macOS Notes")
+    sync_mode.add_argument("--push", action="store_true", help="Update macOS Notes from local notes")
 
     show_p = sub.add_parser("show", help="Show a full note by ID prefix")
     show_p.add_argument("id", help="Note ID prefix")
@@ -356,8 +451,15 @@ def main() -> None:
     elif args.cmd == "list":
         list_notes(args.system)
     elif args.cmd == "sync":
-        imported_count = sync_macos_notes()
-        print(f"Imported {imported_count} notes from Notes app")
+        if args.pull:
+            imported_count, updated_count = sync_pull_macos_notes()
+            print(f"Pulled {updated_count} updates and imported {imported_count} notes from Notes app")
+        elif args.push:
+            created_count, updated_count = sync_push_macos_notes()
+            print(f"Pushed {updated_count} updates and created {created_count} notes in Notes app")
+        else:
+            imported_count = sync_macos_notes()
+            print(f"Imported {imported_count} notes from Notes app")
     elif args.cmd == "show":
         if not show_note(args.id):
             print(f"Note with id={args.id} not found", file=sys.stderr)

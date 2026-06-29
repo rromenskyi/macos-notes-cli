@@ -111,6 +111,18 @@ Import existing macOS Notes into the local index:
 notecli sync
 ```
 
+Pull Notes.app changes into the local index:
+
+```bash
+notecli sync --pull
+```
+
+Push local notes into Notes.app:
+
+```bash
+notecli sync --push
+```
+
 Delete a note by ID prefix:
 
 ```bash
@@ -194,6 +206,8 @@ Notes imported with `sync` get a local UUID and keep their system note ID, so la
 - `show` prints the full local note body and metadata.
 - `list --system` reads Notes.app directly.
 - `sync` imports Notes.app notes that are not already in the local index.
+- `sync --pull` updates linked local notes from Notes.app and imports new Notes.app notes.
+- `sync --push` updates linked Notes.app notes from local notes and creates system notes for local-only notes.
 - `rm` removes the local record and, when linked, deletes the system note.
 - `bfy` updates the local body and, when linked, updates the system note.
 - If a linked note was edited directly in Notes.app, `bfy` asks whether to use the remote Notes.app version or keep the local version before beautifying.
