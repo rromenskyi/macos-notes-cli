@@ -123,6 +123,12 @@ Beautify a note title and body with the configured LLM:
 notecli bfy <ID>
 ```
 
+Beautify the most recently added local note:
+
+```bash
+notecli bfy last
+```
+
 For development, you can still run the script directly:
 
 ```bash

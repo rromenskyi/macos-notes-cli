@@ -157,6 +157,15 @@ def show_note(note_id_prefix: str) -> bool:
     print(note.body)
     return True
 
+def resolve_note_selector(note_id_or_selector: str) -> Optional[str]:
+    if note_id_or_selector != "last":
+        return note_id_or_selector
+
+    notes = load_data()
+    if not notes:
+        return None
+    return notes[-1].id
+
 def sync_macos_notes() -> int:
     system_notes = list_macos_notes()
     if not system_notes:
@@ -276,7 +285,7 @@ def build_parser() -> argparse.ArgumentParser:
     rm_p.add_argument("id", help="Note ID prefix")
 
     beau_p = sub.add_parser("bfy", help="Beautify note using LLM")
-    beau_p.add_argument("id", help="Note ID prefix")
+    beau_p.add_argument("id", help='Note ID prefix, or "last"')
 
     return p
 
@@ -317,10 +326,14 @@ def main() -> None:
             print(f"Note with id={args.id} not found", file=sys.stderr)
             sys.exit(1)
     elif args.cmd == "bfy":
-        if beautify_note(args.id):
-            print(f"Note {args.id} beautified!")
+        note_id = resolve_note_selector(args.id)
+        if not note_id:
+            print("No notes yet.", file=sys.stderr)
+            sys.exit(1)
+        if beautify_note(note_id):
+            print(f"Note {note_id[:8]} beautified!")
         else:
-            print(f"Failed to beautify note {args.id}", file=sys.stderr)
+            print(f"Failed to beautify note {note_id[:8]}", file=sys.stderr)
             sys.exit(1)
 
 if __name__ == "__main__":
