@@ -12,9 +12,9 @@ from typing import Optional
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from notecli.core.models import Note
-from notecli.core.storage import load_data, find_note_by_id_prefix_or_exact, update_data
-from notecli.core.macos import (
+from core.models import Note
+from core.storage import load_data, find_note_by_id_prefix_or_exact, update_data
+from core.macos import (
     create_macos_note,
     delete_macos_note,
     get_macos_note,
@@ -313,7 +313,7 @@ def improve_note_text(title: str, body: str) -> Optional[tuple[str, str]]:
     if not llm_config:
         return None
 
-    from notecli.core.llm import beautify_note_content
+    from core.llm import beautify_note_content
 
     return beautify_note_content(
         title,
