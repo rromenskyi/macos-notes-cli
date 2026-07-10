@@ -12,6 +12,13 @@ warnings.filterwarnings(
 
 import requests
 
+# Try to import native LLM support for macOS 27+
+try:
+    from . import native_llm
+    HAS_NATIVE_LLM = native_llm.is_native_llm_available()
+except ImportError:
+    HAS_NATIVE_LLM = False
+
 
 def beautify_note_content(
     original_title: str,
@@ -23,8 +30,16 @@ def beautify_note_content(
 ) -> Optional[Tuple[str, str]]:
     """
     Uses a local LLM to improve the note title and body.
+    On macOS 27+, automatically tries native LLM first, then falls back to external API.
     Returns the improved title/body pair or None on failure.
     """
+    # Try native LLM first on macOS 27+
+    if HAS_NATIVE_LLM:
+        result = native_llm.beautify_note_content_native(
+            original_title, original_body, timeout
+        )
+        if result is not None:
+            return result
     prompt = f"""Original note:
 {{
   "title": {json.dumps(original_title, ensure_ascii=False)},
