@@ -1,13 +1,20 @@
 # macOS 27 Built-in LLM Support
 
-`notecli` now automatically detects and uses the built-in Apple Intelligence LLM on **macOS 27 and later**.
+`notecli` is ready for Apple Intelligence integration when the public API becomes available on **macOS 27 and later**.
+
+## Current Status
+
+**Note:** As of macOS 27 Beta, Apple Intelligence does not yet have a public API for third-party applications. We are monitoring for:
+- Official Apple Intelligence SDK release
+- Public LLM API endpoints
+- Framework-level access to on-device models
 
 ## Features
 
 ### Automatic Detection
 - Automatically detects macOS 27+ on startup
-- Sets `HAS_NATIVE_LLM = True` when native LLM is available
-- Gracefully falls back to external API if native LLM is unavailable
+- Infrastructure ready for native LLM when API is released
+- Gracefully uses external OpenAI-compatible API in the meantime
 
 ### Native LLM Backend
 When beautifying notes with `bfy` or `addb` on macOS 27+:
