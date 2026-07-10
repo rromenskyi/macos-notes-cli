@@ -40,6 +40,8 @@ def beautify_note_content(
         )
         if result is not None:
             return result
+
+    # Fall back to external API
     prompt = f"""Original note:
 {{
   "title": {json.dumps(original_title, ensure_ascii=False)},
